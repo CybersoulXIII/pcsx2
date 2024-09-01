@@ -1,0 +1,72 @@
+name: 🏭 Create 3D Screenshot Release
+
+on:
+  push:
+    branches:
+      - feature/3d-screenshot
+
+permissions:
+  contents: write
+
+jobs:
+  # Build Everything
+  # Windows
+  build_windows_qt:
+    name: "Windows"
+    uses: ./.github/workflows/windows_build_qt.yml
+    with:
+      jobName: "Windows Build"
+      artifactPrefixName: "PCSX2-3D-Screenshot-windows-Qt-x64"
+      configuration: CMake
+      buildSystem: cmake
+      cmakeFlags: -DCMAKE_C_COMPILER=clang-cl -DCMAKE_CXX_COMPILER=clang-cl
+      fetchTags: true
+      stableBuild: false
+    secrets: inherit
+
+  # Linux AppImage build failed and I don't feel like debugging it
+
+  # Upload the Artifacts
+  make_release:
+    needs:
+      - build_windows_qt
+    name: "Make Release"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Prepare Artifact Folder
+        run: mkdir ./ci-artifacts/
+
+      - uses: actions/download-artifact@v4
+        name: Download all Artifacts
+        with:
+          path: ./ci-artifacts/
+
+      - name: Display structure of downloaded files
+        run: ls ./ci-artifacts/
+
+      - name: Rename artifacts
+        working-directory: ./ci-artifacts/
+        run: |
+          rm -rf *-symbols
+          mv PCSX2-3D-Screenshot-windows* PCSX2-3D-Screenshot-windows
+
+      - name: Zip Artifacts
+        working-directory: ./ci-artifacts/
+        run: 7z a PCSX2-3D-Screenshot-windows.7z PCSX2-3D-Screenshot-windows
+
+      - name: Tag
+        run: |
+          git tag --force latest-3d-screenshot ${{ github.sha }}
+          git push --force origin latest-3d-screenshot
+
+      - name: Release
+        uses: ncipollo/release-action@v1
+        with:
+          tag: latest-3d-screenshot
+          allowUpdates: true
+          omitBodyDuringUpdate: true
+          omitNameDuringUpdate: true
+          artifactErrorsFailBuild: true
+          artifacts: "ci-artifacts/*.7z"
