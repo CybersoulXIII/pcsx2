@@ -479,6 +479,7 @@ endif()
 
 set(pcsx2GSSources
 	GS/GS.cpp
+	GS/GS3DScreenshot.cpp
 	GS/GSCapture.cpp
 	GS/GSClut.cpp
 	GS/GSDrawingContext.cpp
@@ -510,6 +511,7 @@ set(pcsx2GSSources
 
 # GS headers
 set(pcsx2GSHeaders
+	GS/GS3DScreenshot.h
 	GS/GSAlignedClass.h
 	GS/GSBlock.h
 	GS/GSCapture.h

@@ -27,6 +27,12 @@ public:
 		std::array<u16, MAX_PAGES> m_erase_it;
 		const u32* RESTRICT m_sharedbits;
 
+		// For 3D screenshots. Records the last filename the
+		// texture was dumped as so it can quickly be reused the
+		// next time it is used with the same region.
+		std::string m_dump_filename;
+		GS3DScreenshot::TextureRegion m_last_region_dumped;
+
 		// m_valid
 		// fast mode: each u32 bits map to the 32 blocks of that page
 		// repeating mode: 1 bpp image of the texture tiles (8x8), also having 512 elements is just a coincidence (worst case: (1024*1024)/(8*8)/(sizeof(u32)*8))
@@ -38,6 +44,7 @@ public:
 
 		bool Update(const GSVector4i& r);
 		bool Save(const std::string& fn) const;
+		void DumpFor3DScreenshot(const std::string& dirname, const GS3DScreenshot::TextureRegion& region);
 	};
 
 protected:

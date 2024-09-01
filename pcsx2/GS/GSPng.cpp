@@ -88,7 +88,7 @@ namespace GSPng
 		return true;
 	}
 
-	bool Save(GSPng::Format fmt, const std::string& file, const u8* image, int w, int h, int pitch, int compression, bool rb_swapped)
+	bool Save(GSPng::Format fmt, const std::string& file, const u8* image, int w, int h, int pitch, int compression, bool rb_swapped, bool dont_change_extension)
 	{
 		std::string root = file;
 		root.replace(file.length() - 4, 4, "");
@@ -101,7 +101,7 @@ namespace GSPng
 		std::unique_ptr<u8[]> row(new u8[pixel[fmt].bytes_per_pixel_out * w]);
 
 		std::string filename = root + pixel[fmt].extension[0];
-		if (!SaveFile(filename, fmt, image, row.get(), w, h, pitch, compression, rb_swapped, true))
+		if (!SaveFile(dont_change_extension ? file : filename, fmt, image, row.get(), w, h, pitch, compression, rb_swapped, true))
 			return false;
 
 		// Second image
