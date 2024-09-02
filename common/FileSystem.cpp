@@ -1699,9 +1699,18 @@ bool FileSystem::CreateDirectoryPath(const char* Path, bool Recursive, Error* er
 		const size_t pathLength = wpath.size();
 		std::wstring tempPath;
 		tempPath.reserve(pathLength);
+		size_t i = 0;
+
+		// skip over a prefix like "C:\"
+		auto k = wpath.find(L":\\");
+		if (k != std::wstring::npos)
+		{
+			i = k + 2;
+			tempPath = wpath.substr(0, i);
+		}
 
 		// create directories along the path
-		for (size_t i = 0; i < pathLength; i++)
+		for (; i < pathLength; i++)
 		{
 			if (wpath[i] == L'\\' || wpath[i] == L'/')
 			{
