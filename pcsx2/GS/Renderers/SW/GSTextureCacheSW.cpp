@@ -446,13 +446,13 @@ void GSTextureCacheSW::Texture::DumpFor3DScreenshot(
 		}
 	}
 
+	const u64 hash = GSXXH3_64bits(dumptex.get(), dst_w * dst_h * 4);
+
 	const int expanded_alpha = ExpandAlphaChannel(
 		reinterpret_cast<u8*>(dumptex.get()),
 		dst_w * dst_h
 	);
 
-	// Name with the hashed contents
-	const u64 hash = GSXXH3_64bits(dumptex.get(), dst_w * dst_h * 4);
 	if (expanded_alpha == 255)  // no expansion
 		m_dump_filename = fmt::format("{:x}.png", hash);
 	else
