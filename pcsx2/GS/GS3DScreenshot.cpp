@@ -160,7 +160,7 @@ bool GS3DScreenshot::DumpOBJ(const std::string& filename) const
 		// v - Vertex position and color
 		for (u32 i = 0; i < 3; i++)
 			fmt::print(fp,
-				"v {} {} {} {} {} {}\n",
+				"v {} {} {} {:.3f} {:.3f} {:.3f}\n",
 				tri.verts[i].x,
 				-tri.verts[i].y,  // axis conversion
 				tri.verts[i].z,
