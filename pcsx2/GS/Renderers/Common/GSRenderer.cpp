@@ -928,7 +928,7 @@ static std::string GSGetBase3DScreenshotDirectory()
 // one from GSGetBaseFilename used for snaps/GS dumps.
 static std::string GSGetBase3DScreenshotFilename()
 {
-	std::string filename = Path::Combine(GSGetBase3DScreenshotDirectory(), "shot");
+	std::string filename = "shot";
 
 	const time_t cur_time = time(nullptr);
 	char local_time[16];

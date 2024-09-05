@@ -4,6 +4,7 @@
 #include "GS/GS3DScreenshot.h"
 
 #include "common/FileSystem.h"
+#include "common/Path.h"
 
 #include <cstdio>
 #include <string>
@@ -144,7 +145,7 @@ bool GS3DScreenshot::DumpToFile(const std::string& filename) const
 
 bool GS3DScreenshot::DumpOBJ(const std::string& filename) const
 {
-	const std::string path = filename + ".obj";
+	const std::string path = Path::Combine(m_dump_dir, filename + ".obj");
 	std::FILE* fp = FileSystem::OpenCFile(path.c_str(), "wb");
 	if (!fp)
 		return false;
@@ -205,7 +206,7 @@ bool GS3DScreenshot::DumpOBJ(const std::string& filename) const
 
 bool GS3DScreenshot::DumpMTL(const std::string& filename) const
 {
-	const std::string path = filename + ".mtl";
+	const std::string path = Path::Combine(m_dump_dir, filename + ".mtl");
 	std::FILE* fp = FileSystem::OpenCFile(path.c_str(), "wb");
 	if (!fp)
 		return false;
