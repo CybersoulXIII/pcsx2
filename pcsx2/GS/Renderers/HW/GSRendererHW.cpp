@@ -4093,7 +4093,7 @@ void GSRendererHW::EmulateBlending(int rt_alpha_min, int rt_alpha_max, const boo
 	static constexpr const char* col[3] = {"Cs", "Cd", "0"};
 	static constexpr const char* alpha[3] = {"As", "Ad", "Af"};
 	GL_INS("EmulateBlending(): (%s - %s) * %s + %s", col[ALPHA.A], col[ALPHA.B], alpha[ALPHA.C], col[ALPHA.D]);
-	GL_INS("Draw AlphaMinMax: %d-%d, RT AlphaMinMax: %d-%d", GetAlphaMinMax().min, GetAlphaMinMax().max, rt_alpha_min, rt_alpha_max);
+	GL_INS("Draw AlphaMinMax: %d-%d, RT AlphaMinMax: %d-%d, AFIX: %u", GetAlphaMinMax().min, GetAlphaMinMax().max, rt_alpha_min, rt_alpha_max, AFIX);
 #endif
 
 	// If the colour is modulated to zero or we're not using a texture and the color is zero, we can replace any Cs with 0
@@ -4155,6 +4155,7 @@ void GSRendererHW::EmulateBlending(int rt_alpha_min, int rt_alpha_max, const boo
 	const bool alpha_c2_eq_less_one = (m_conf.ps.blend_c == 2 && AFIX <= 128u);
 	const bool alpha_c2_high_one = (m_conf.ps.blend_c == 2 && AFIX > 128u);
 	const bool alpha_eq_one = alpha_c0_eq_one || alpha_c2_eq_one;
+	const bool alpha_high_one = alpha_c0_high_min_one || alpha_c2_high_one;
 	const bool alpha_eq_less_one = alpha_c0_eq_less_max_one || alpha_c2_eq_less_one;
 
 	// Optimize blending equations, must be done before index calculation
@@ -4182,7 +4183,7 @@ void GSRendererHW::EmulateBlending(int rt_alpha_min, int rt_alpha_max, const boo
 		m_conf.ps.blend_b = 0;
 	}
 	else if (COLCLAMP.CLAMP && m_conf.ps.blend_a == 2
-		&& (m_conf.ps.blend_d == 2 || (m_conf.ps.blend_b == m_conf.ps.blend_d && (alpha_c0_high_min_one || alpha_c1_high_min_one || alpha_c2_high_one))))
+		&& (m_conf.ps.blend_d == 2 || (m_conf.ps.blend_b == m_conf.ps.blend_d && (alpha_high_one || alpha_c1_high_min_one))))
 	{
 		// CLAMP 1, negative result will be clamped to 0.
 		// Condition 1:
@@ -4247,7 +4248,7 @@ void GSRendererHW::EmulateBlending(int rt_alpha_min, int rt_alpha_max, const boo
 	const bool blend_non_recursive = !!(blend_flag & BLEND_NO_REC);
 
 	// BLEND MIX selection, use a mix of hw/sw blending
-	const bool blend_mix1 = !!(blend_flag & BLEND_MIX1) && !(m_conf.ps.blend_b == m_conf.ps.blend_d && (alpha_c0_high_min_one || alpha_c2_high_one));
+	const bool blend_mix1 = !!(blend_flag & BLEND_MIX1) && !(m_conf.ps.blend_b == m_conf.ps.blend_d && alpha_high_one);
 	const bool blend_mix2 = !!(blend_flag & BLEND_MIX2);
 	const bool blend_mix3 = !!(blend_flag & BLEND_MIX3);
 	bool blend_mix = (blend_mix1 || blend_mix2 || blend_mix3) && COLCLAMP.CLAMP;
@@ -4256,12 +4257,14 @@ void GSRendererHW::EmulateBlending(int rt_alpha_min, int rt_alpha_max, const boo
 	const bool no_prim_overlap = (m_prim_overlap == PRIM_OVERLAP_NO);
 
 	// HW blend can be done in multiple passes when there's no overlap.
-	// Blend second pass is only useful when texture barriers aren't supported.
-	// Speed wise Texture barriers > blend second pass > texture copies.
+	// Blend multi pass is only useful when texture barriers aren't supported.
+	// Speed wise Texture barriers > blend multi pass > texture copies.
 	const bool blend_multi_pass_support = !features.texture_barrier && no_prim_overlap && is_basic_blend;
-	const bool bmix1_second_pass = blend_multi_pass_support && blend_mix1 && (alpha_c0_high_max_one || alpha_c2_high_one) && m_conf.ps.blend_d == 2;
-	// We don't want to enable blend mix if we are doing a second pass, it's useless.
-	blend_mix &= !bmix1_second_pass;
+	const bool bmix1_multi_pass1 = blend_multi_pass_support && blend_mix1 && (alpha_c0_high_max_one || alpha_c2_high_one) && m_conf.ps.blend_d == 2;
+	const bool bmix1_multi_pass2 = blend_multi_pass_support && (blend_flag & BLEND_MIX1) && m_conf.ps.blend_b == m_conf.ps.blend_d && !m_conf.ps.dither && alpha_high_one;
+	const bool bmix3_multi_pass = blend_multi_pass_support && blend_mix3 && !m_conf.ps.dither && alpha_high_one;
+	// We don't want to enable blend mix if we are doing a multi pass, it's useless.
+	blend_mix &= !(bmix1_multi_pass1 || bmix1_multi_pass2 || bmix3_multi_pass);
 
 	const bool one_barrier = m_conf.require_one_barrier || blend_ad_alpha_masked;
 	// Condition 1: Require full sw blend for full barrier.
@@ -4420,13 +4423,35 @@ void GSRendererHW::EmulateBlending(int rt_alpha_min, int rt_alpha_max, const boo
 	// Per pixel alpha blending
 	if (m_draw_env->PABE.PABE && GetAlphaMinMax().min < 128)
 	{
-		// Breath of Fire Dragon Quarter, Strawberry Shortcake, Super Robot Wars, Cartoon Network Racing, Simple 2000 Series Vol.81, SOTC, Super Robot Wars.
-		if (sw_blending)
+		// Breath of Fire Dragon Quarter, Strawberry Shortcake, Super Robot Wars, Cartoon Network Racing, Simple 2000 Series Vol.81, SOTC.
+		if (GetAlphaMinMax().max == 128 && m_conf.ps.blend_a == 0 && ((blend.dst == GSDevice::INV_SRC1_COLOR)
+			|| (blend.dst == GSDevice::INV_DST_ALPHA)
+			|| (blend.dst == GSDevice::INV_CONST_COLOR)))
 		{
-			GL_INS("PABE mode ENABLED");
-			if (features.texture_barrier)
+			// PABE disable blending:
+			// We can disable blending here as an optimization since alpha max is 128
+			// which if alpha is 1 in the formula Cs*Alpha + Cd*(1 - Alpha) will give us a result of Cs.
+			m_conf.blend = {};
+			m_conf.ps.no_color1 = true;
+			m_conf.ps.blend_a = m_conf.ps.blend_b = m_conf.ps.blend_c = m_conf.ps.blend_d = 0;
+
+			return;
+		}
+		else if (sw_blending)
+		{
+			if (accumulation_blend && (blend.op != GSDevice::OP_REV_SUBTRACT))
 			{
-				// Disable hw/sw blend and do pure sw blend with reading the framebuffer.
+				// PABE accumulation blend:
+				// Idea is to achieve final output Cs when As < 1, we do this with manipulating Cd using the src1 output.
+				// This can't be done with reverse subtraction as we want Cd to be 0 when As < 1.
+				// TODO: Blend mix is excluded as no games were found, otherwise it can be added.
+
+				m_conf.ps.pabe = 1;
+			}
+			else if (features.texture_barrier)
+			{
+				// PABE sw blend:
+				// Disable hw/sw mix and do pure sw blend with reading the framebuffer.
 				color_dest_blend   = false;
 				accumulation_blend = false;
 				blend_mix          = false;
@@ -4441,8 +4466,11 @@ void GSRendererHW::EmulateBlending(int rt_alpha_min, int rt_alpha_max, const boo
 			}
 			else
 			{
+				// PABE sw blend:
 				m_conf.ps.pabe = !(accumulation_blend || blend_mix);
 			}
+
+			GL_INS("PABE mode %s", m_conf.ps.pabe ? "ENABLED" : "DISABLED");
 		}
 	}
 
@@ -4516,9 +4544,13 @@ void GSRendererHW::EmulateBlending(int rt_alpha_min, int rt_alpha_max, const boo
 					m_conf.ps.blend_b = 2;
 				}
 			}
+			else if (m_conf.ps.pabe)
+			{
+				m_conf.blend.dst_factor = GSDevice::SRC1_COLOR;
+			}
 
 			// Dual source output not needed (accumulation blend replaces it with ONE).
-			m_conf.ps.no_color1 = true;
+			m_conf.ps.no_color1 = (m_conf.ps.pabe == 0);
 		}
 		else if (blend_mix)
 		{
@@ -4622,7 +4654,7 @@ void GSRendererHW::EmulateBlending(int rt_alpha_min, int rt_alpha_max, const boo
 		if (blend_multi_pass_support)
 		{
 			const HWBlend blend_multi_pass = GSDevice::GetBlend(blend_index);
-			if (bmix1_second_pass)
+			if (bmix1_multi_pass1)
 			{
 				// Alpha = As or Af.
 				// Cs*Alpha - Cd*Alpha, Cd*Alpha - Cs*Alpha.
@@ -4633,6 +4665,34 @@ void GSRendererHW::EmulateBlending(int rt_alpha_min, int rt_alpha_max, const boo
 				m_conf.blend_multi_pass.enable = true;
 				m_conf.blend_multi_pass.blend_hw = static_cast<u8>(HWBlendType::SRC_ALPHA_DST_FACTOR);
 				m_conf.blend_multi_pass.blend = {true, GSDevice::DST_COLOR, (m_conf.ps.blend_c == 2) ? GSDevice::CONST_COLOR : GSDevice::SRC1_COLOR, GSDevice::OP_ADD, GSDevice::CONST_ONE, GSDevice::CONST_ZERO, m_conf.ps.blend_c == 2, AFIX};
+			}
+			else if (bmix1_multi_pass2)
+			{
+				// Alpha = As or Af.
+				// Cs*Alpha + Cd*(1 - Alpha).
+				// Render pass 1: Do the blend but halve the alpha, subtract instead of add since alpha is higher than 1.
+				m_conf.ps.blend_hw = static_cast<u8>(HWBlendType::SRC_INV_DST_BLEND_HALF);
+				blend.src = GSDevice::CONST_ONE;
+				blend.dst = GSDevice::SRC1_COLOR;
+				blend.op = GSDevice::OP_SUBTRACT;
+				// Render pass 2: Take result (Cd) from render pass 1 and double it.
+				m_conf.blend_multi_pass.enable = true;
+				m_conf.blend_multi_pass.blend_hw = static_cast<u8>(HWBlendType::SRC_ONE_DST_FACTOR);
+				m_conf.blend_multi_pass.blend = {true, GSDevice::DST_COLOR, GSDevice::CONST_ONE, blend_multi_pass.op, GSDevice::CONST_ONE, GSDevice::CONST_ZERO, false, 0};
+			}
+			else if (bmix3_multi_pass)
+			{
+				// Alpha = As or Af.
+				// Cd*Alpha + Cs*(1 - Alpha).
+				// Render pass 1: Do the blend but halve the alpha, subtract instead of add since alpha is higher than 1.
+				m_conf.ps.blend_hw = static_cast<u8>(HWBlendType::INV_SRC_DST_BLEND_HALF);
+				blend.src = GSDevice::CONST_ONE;
+				blend.dst = GSDevice::SRC1_COLOR;
+				blend.op = GSDevice::OP_REV_SUBTRACT;
+				// Render pass 2: Take result (Cd) from render pass 1 and double it.
+				m_conf.blend_multi_pass.enable = true;
+				m_conf.blend_multi_pass.blend_hw = static_cast<u8>(HWBlendType::SRC_ONE_DST_FACTOR);
+				m_conf.blend_multi_pass.blend = {true, GSDevice::DST_COLOR, GSDevice::CONST_ONE, blend_multi_pass.op, GSDevice::CONST_ONE, GSDevice::CONST_ZERO, false, 0};
 			}
 			else if ((alpha_c0_high_max_one || alpha_c1_high_no_rta_correct || alpha_c2_high_one) && (blend_flag & BLEND_HW1))
 			{
@@ -4744,7 +4804,9 @@ void GSRendererHW::EmulateBlending(int rt_alpha_min, int rt_alpha_max, const boo
 
 		if (m_conf.ps.blend_c == 2 && (m_conf.ps.blend_hw == static_cast<u8>(HWBlendType::SRC_ALPHA_DST_FACTOR)
 			|| m_conf.ps.blend_hw == static_cast<u8>(HWBlendType::SRC_HALF_ONE_DST_FACTOR)
-			|| m_conf.blend_multi_pass.blend_hw == static_cast<u8>(HWBlendType::SRC_ALPHA_DST_FACTOR)))
+			|| m_conf.blend_multi_pass.blend_hw == static_cast<u8>(HWBlendType::SRC_ALPHA_DST_FACTOR)
+			|| m_conf.ps.blend_hw == static_cast<u8>(HWBlendType::SRC_INV_DST_BLEND_HALF)
+			|| m_conf.ps.blend_hw == static_cast<u8>(HWBlendType::INV_SRC_DST_BLEND_HALF)))
 		{
 			m_conf.cb_ps.TA_MaxDepth_Af.a = static_cast<float>(AFIX) / 128.0f;
 		}

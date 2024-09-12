@@ -1196,7 +1196,7 @@ size_t FileSystem::ReadFileWithProgress(std::FILE* fp, void* dst, size_t length,
 			break;
 
 		const size_t read_size = std::min(length - done, chunk_size);
-		if (std::fread(static_cast<u8*>(dst)+ done, read_size, 1, fp) != 1)
+		if (std::fread(static_cast<u8*>(dst) + done, read_size, 1, fp) != 1)
 		{
 			Error::SetErrno(error, "fread() failed: ", errno);
 			break;
@@ -1460,7 +1460,24 @@ bool FileSystem::FindFiles(const char* path, const char* pattern, u32 flags, Fin
 	}
 
 	// enter the recursive function
-	return (RecursiveFindFiles(path, nullptr, nullptr, pattern, flags, results, visited) > 0);
+	if (RecursiveFindFiles(path, nullptr, nullptr, pattern, flags, results, visited) == 0)
+		return false;
+
+	if (flags & FILESYSTEM_FIND_SORT_BY_NAME)
+	{
+		std::sort(results->begin(), results->end(), [](const FILESYSTEM_FIND_DATA& lhs, const FILESYSTEM_FIND_DATA& rhs) {
+			// directories first
+			if ((lhs.Attributes & FILESYSTEM_FILE_ATTRIBUTE_DIRECTORY) !=
+				(rhs.Attributes & FILESYSTEM_FILE_ATTRIBUTE_DIRECTORY))
+			{
+				return ((lhs.Attributes & FILESYSTEM_FILE_ATTRIBUTE_DIRECTORY) != 0);
+			}
+
+			return (StringUtil::Strcasecmp(lhs.FileName.c_str(), rhs.FileName.c_str()) < 0);
+		});
+	}
+
+	return true;
 }
 
 static void TranslateStat64(struct stat* st, const struct _stat64& st64)
@@ -1633,6 +1650,21 @@ bool FileSystem::DirectoryExists(const char* path)
 		return false;
 }
 
+bool FileSystem::IsRealDirectory(const char* path)
+{
+	// convert to wide string
+	const std::wstring wpath = GetWin32Path(path);
+	if (wpath.empty())
+		return false;
+
+	// determine attributes for the path. if it's a directory, things have to be handled differently..
+	const DWORD fileAttributes = GetFileAttributesW(wpath.c_str());
+	if (fileAttributes == INVALID_FILE_ATTRIBUTES)
+		return false;
+
+	return ((fileAttributes & (FILE_ATTRIBUTE_DIRECTORY | FILE_ATTRIBUTE_REPARSE_POINT)) != FILE_ATTRIBUTE_DIRECTORY);
+}
+
 bool FileSystem::DirectoryIsEmpty(const char* path)
 {
 	std::wstring wpath = GetWin32Path(path);
@@ -1699,18 +1731,27 @@ bool FileSystem::CreateDirectoryPath(const char* Path, bool Recursive, Error* er
 		const size_t pathLength = wpath.size();
 		std::wstring tempPath;
 		tempPath.reserve(pathLength);
-		size_t i = 0;
 
-		// skip over a prefix like "C:\"
-		auto k = wpath.find(L":\\");
-		if (k != std::wstring::npos)
+		// for absolute paths, we need to skip over the path root
+		size_t rootLength = 0;
+		if (Path::IsAbsolute(Path))
 		{
-			i = k + 2;
-			tempPath = wpath.substr(0, i);
+			const wchar_t* root_start = wpath.c_str();
+			wchar_t* root_end;
+			const HRESULT hr = PathCchSkipRoot(const_cast<wchar_t*>(root_start), &root_end);
+			if (FAILED(hr))
+			{
+				Error::SetHResult(error, "PathCchSkipRoot() failed: ", hr);
+				return false;
+			}
+			rootLength = static_cast<size_t>(root_end - root_start);
+
+			// copy path root
+			tempPath.append(wpath, 0, rootLength);
 		}
 
 		// create directories along the path
-		for (; i < pathLength; i++)
+		for (size_t i = rootLength; i < pathLength; i++)
 		{
 			if (wpath[i] == L'\\' || wpath[i] == L'/')
 			{
@@ -2051,7 +2092,24 @@ bool FileSystem::FindFiles(const char* path, const char* pattern, u32 flags, Fin
 	}
 
 	// enter the recursive function
-	return (RecursiveFindFiles(path, nullptr, nullptr, pattern, flags, results, visited) > 0);
+	if (RecursiveFindFiles(path, nullptr, nullptr, pattern, flags, results, visited) == 0)
+		return false;
+
+	if (flags & FILESYSTEM_FIND_SORT_BY_NAME)
+	{
+		std::sort(results->begin(), results->end(), [](const FILESYSTEM_FIND_DATA& lhs, const FILESYSTEM_FIND_DATA& rhs) {
+			// directories first
+			if ((lhs.Attributes & FILESYSTEM_FILE_ATTRIBUTE_DIRECTORY) !=
+				(rhs.Attributes & FILESYSTEM_FILE_ATTRIBUTE_DIRECTORY))
+			{
+				return ((lhs.Attributes & FILESYSTEM_FILE_ATTRIBUTE_DIRECTORY) != 0);
+			}
+
+			return (StringUtil::Strcasecmp(lhs.FileName.c_str(), rhs.FileName.c_str()) < 0);
+		});
+	}
+
+	return true;
 }
 
 bool FileSystem::StatFile(const char* path, struct stat* st)
@@ -2156,6 +2214,15 @@ bool FileSystem::DirectoryExists(const char* path)
 		return true;
 	else
 		return false;
+}
+
+bool FileSystem::IsRealDirectory(const char* path)
+{
+	struct stat sysStatData;
+	if (lstat(path, &sysStatData) < 0)
+		return false;
+
+	return (S_ISDIR(sysStatData.st_mode) && !S_ISLNK(sysStatData.st_mode));
 }
 
 bool FileSystem::DirectoryIsEmpty(const char* path)

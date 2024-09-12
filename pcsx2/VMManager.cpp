@@ -7,8 +7,7 @@
 #include "Counters.h"
 #include "DEV9/DEV9.h"
 #include "DebugTools/DebugInterface.h"
-#include "DebugTools/MIPSAnalyst.h"
-#include "DebugTools/SymbolMap.h"
+#include "DebugTools/SymbolGuardian.h"
 #include "Elfheader.h"
 #include "FW.h"
 #include "GS.h"
@@ -447,6 +446,9 @@ void VMManager::Internal::CPUThreadShutdown()
 
 	// Ensure emulog gets flushed.
 	Log::SetFileOutputLevel(LOGLEVEL_NONE, std::string());
+
+	R3000SymbolGuardian.ShutdownWorkerThread();
+	R5900SymbolGuardian.ShutdownWorkerThread();
 }
 
 void VMManager::Internal::SetFileLogPath(std::string path)
@@ -659,11 +661,6 @@ void VMManager::LoadInputBindings(SettingsInterface& si, std::unique_lock<std::m
 			InputManager::ReloadBindings(si, *isi, si);
 			Host::Internal::SetInputSettingsLayer(s_input_settings_interface.get(), lock);
 		}
-	}
-	else if (SettingsInterface* gsi = Host::Internal::GetGameSettingsLayer();
-			 gsi && gsi->GetBoolValue("Pad", "UseGameSettingsForController", false))
-	{
-		InputManager::ReloadBindings(si, *gsi, si);
 	}
 	else
 	{
@@ -941,10 +938,7 @@ bool VMManager::UpdateGameSettingsLayer()
 
 	std::string input_profile_name;
 	if (new_interface)
-	{
-		if (!new_interface->GetBoolValue("Pad", "UseGameSettingsForController", false))
-			new_interface->GetStringValue("EmuCore", "InputProfileName", &input_profile_name);
-	}
+		new_interface->GetStringValue("EmuCore", "InputProfileName", &input_profile_name);
 
 	if (!s_game_settings_interface && !new_interface && s_input_profile_name == input_profile_name)
 		return false;
@@ -1133,9 +1127,6 @@ void VMManager::HandleELFChange(bool verbose_patches_if_changed)
 	Console.WriteLn(Color_StrongOrange, fmt::format("ELF changed, active CRC {:08X} ({})", crc_to_report, s_elf_path));
 	Patch::ReloadPatches(s_disc_serial, crc_to_report, false, false, false, verbose_patches_if_changed);
 	ApplyCoreSettings();
-
-	MIPSAnalyst::ScanForFunctions(
-		R5900SymbolMap, s_elf_text_range.first, s_elf_text_range.first + s_elf_text_range.second, true);
 }
 
 void VMManager::UpdateELFInfo(std::string elf_path)
@@ -1159,6 +1150,25 @@ void VMManager::UpdateELFInfo(std::string elf_path)
 	s_elf_entry_point = elfo.GetEntryPoint();
 	s_elf_text_range = elfo.GetTextRange();
 	s_elf_path = std::move(elf_path);
+
+	R5900SymbolGuardian.Reset();
+
+	// Search for a .sym file to load symbols from.
+	std::string nocash_path;
+	CDVD_SourceType source_type = CDVDsys_GetSourceType();
+	if (source_type == CDVD_SourceType::Iso)
+	{
+		std::string iso_file_path = CDVDsys_GetFile(source_type);
+
+		std::string::size_type n = iso_file_path.rfind('.');
+		if (n == std::string::npos)
+			nocash_path = iso_file_path + ".sym";
+		else
+			nocash_path = iso_file_path.substr(0, n) + ".sym";
+	}
+
+	// Load the symbols stored in the ELF file.
+	R5900SymbolGuardian.ImportElf(elfo.ReleaseData(), s_elf_path, nocash_path);
 }
 
 void VMManager::ClearELFInfo()
@@ -1695,6 +1705,8 @@ void VMManager::Reset()
 	ClearELFInfo();
 	if (elf_was_changed)
 		HandleELFChange(false);
+
+	Achievements::ResetClient();
 
 	mmap_ResetBlockTracking();
 	memSetExtraMemMode(EmuConfig.Cpu.ExtraMemory);
@@ -2501,21 +2513,28 @@ void VMManager::LogCPUCapabilities()
 	Console.WriteLnFmt("  Processor        = {}", cpuinfo_get_package(0)->name);
 	Console.WriteLnFmt("  Core Count       = {} cores", cpuinfo_get_cores_count());
 	Console.WriteLnFmt("  Thread Count     = {} threads", cpuinfo_get_processors_count());
+	Console.WriteLnFmt("  Cluster Count    = {} clusters", cpuinfo_get_clusters_count());
 #ifdef _WIN32
 	LogUserPowerPlan();
 #endif
 
 #ifdef _M_X86
-	std::string features;
+	std::string extensions;
 	if (cpuinfo_has_x86_avx())
-		features += "AVX ";
+		extensions += "AVX ";
 	if (cpuinfo_has_x86_avx2())
-		features += "AVX2 ";
+		extensions += "AVX2 ";
+	if (cpuinfo_has_x86_avx512f())
+		extensions += "AVX512F ";
+#ifdef _M_ARM64
+	if (cpuinfo_has_arm_neon())
+		extensions += "NEON ";
+#endif
 
-	StringUtil::StripWhitespace(&features);
+	StringUtil::StripWhitespace(&extensions);
 
-	Console.WriteLn(Color_StrongBlack, "x86 Features Detected:");
-	Console.WriteLnFmt("  {}", features);
+	Console.WriteLn(Color_StrongBlack, "CPU Extensions Detected:");
+	Console.WriteLnFmt("  {}", extensions);
 	Console.WriteLn();
 #endif
 
@@ -3608,15 +3627,23 @@ void VMManager::UpdateDiscordPresence(bool update_session_time)
 	// https://discord.com/developers/docs/rich-presence/how-to#updating-presence-update-presence-payload-fields
 	DiscordRichPresence rp = {};
 	rp.largeImageKey = "4k-pcsx2";
-	rp.largeImageText = "PCSX2 Emulator";
+	rp.largeImageText = "PCSX2 PS2 Emulator";
 	rp.startTimestamp = s_discord_presence_time_epoch;
 	rp.details = s_title.empty() ?  TRANSLATE("VMManager","No Game Running") : s_title.c_str();
 
 	std::string state_string;
+
+	auto lock = Achievements::GetLock();
+
 	if (Achievements::HasRichPresence())
 	{
-		state_string = StringUtil::Ellipsise(Achievements::GetRichPresenceString(), 128);
-		rp.state = state_string.c_str();
+		rp.state = (state_string = StringUtil::Ellipsise(Achievements::GetRichPresenceString(), 128)).c_str();
+
+		if (const std::string& icon_url = Achievements::GetGameIconURL(); !icon_url.empty())
+		{
+			rp.largeImageKey = icon_url.c_str();
+			rp.largeImageText = s_title.c_str();
+		}
 	}
 
 	Discord_UpdatePresence(&rp);

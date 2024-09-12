@@ -47,7 +47,7 @@ QVariant BreakpointModel::data(const QModelIndex& index, int role) const
 				case BreakpointColumns::OFFSET:
 					return QtUtils::FilledQStringFromValue(bp->addr, 16);
 				case BreakpointColumns::SIZE_LABEL:
-					return m_cpu.GetSymbolMap().GetLabelName(bp->addr).c_str();
+					return QString::fromStdString(m_cpu.GetSymbolGuardian().FunctionStartingAtAddress(bp->addr).name);
 				case BreakpointColumns::OPCODE:
 					// Note: Fix up the disassemblymanager so we can use it here, instead of calling a function through the disassemblyview (yuck)
 					return m_cpu.disasm(bp->addr, true).c_str();
@@ -100,7 +100,7 @@ QVariant BreakpointModel::data(const QModelIndex& index, int role) const
 				case BreakpointColumns::OFFSET:
 					return bp->addr;
 				case BreakpointColumns::SIZE_LABEL:
-					return m_cpu.GetSymbolMap().GetLabelName(bp->addr).c_str();
+					return QString::fromStdString(m_cpu.GetSymbolGuardian().FunctionStartingAtAddress(bp->addr).name);
 				case BreakpointColumns::OPCODE:
 					// Note: Fix up the disassemblymanager so we can use it here, instead of calling a function through the disassemblyview (yuck)
 					return m_cpu.disasm(bp->addr, false).c_str();
@@ -146,7 +146,7 @@ QVariant BreakpointModel::data(const QModelIndex& index, int role) const
 				case BreakpointColumns::OFFSET:
 					return QtUtils::FilledQStringFromValue(bp->addr, 16);
 				case BreakpointColumns::SIZE_LABEL:
-					return m_cpu.GetSymbolMap().GetLabelName(bp->addr).c_str();
+					return QString::fromStdString(m_cpu.GetSymbolGuardian().FunctionStartingAtAddress(bp->addr).name);
 				case BreakpointColumns::OPCODE:
 					// Note: Fix up the disassemblymanager so we can use it here, instead of calling a function through the disassemblyview (yuck)
 					return m_cpu.disasm(bp->addr, false).c_str();
@@ -254,8 +254,6 @@ QVariant BreakpointModel::headerData(int section, Qt::Orientation orientation, i
 
 Qt::ItemFlags BreakpointModel::flags(const QModelIndex& index) const
 {
-	volatile const int row = index.row();
-
 	switch (index.column())
 	{
 		case BreakpointColumns::CONDITION:

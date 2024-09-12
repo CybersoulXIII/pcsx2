@@ -728,9 +728,6 @@
     <ClCompile Include="CDVD\BlockdumpFileReader.cpp">
       <Filter>System\ISO</Filter>
     </ClCompile>
-    <ClCompile Include="DebugTools\SymbolMap.cpp">
-      <Filter>System\Ps2\Debug</Filter>
-    </ClCompile>
     <ClCompile Include="DebugTools\DebugInterface.cpp">
       <Filter>System\Ps2\Debug</Filter>
     </ClCompile>
@@ -1178,10 +1175,7 @@
     <ClCompile Include="USB\usb-mic\usb-headset.cpp">
       <Filter>System\Ps2\USB\usb-mic</Filter>
     </ClCompile>
-    <ClCompile Include="USB\usb-mic\usb-mic-logitech.cpp">
-      <Filter>System\Ps2\USB\usb-mic</Filter>
-    </ClCompile>
-    <ClCompile Include="USB\usb-mic\usb-mic-singstar.cpp">
+    <ClCompile Include="USB\usb-mic\usb-mic.cpp">
       <Filter>System\Ps2\USB\usb-mic</Filter>
     </ClCompile>
     <ClCompile Include="USB\usb-hid\usb-hid.cpp">
@@ -1203,6 +1197,9 @@
       <Filter>System\Ps2\USB\usb-pad</Filter>
     </ClCompile>
     <ClCompile Include="USB\usb-pad\usb-trance-vibrator.cpp">
+      <Filter>System\Ps2\USB\usb-pad</Filter>
+    </ClCompile>
+    <ClCompile Include="USB\usb-pad\usb-train.cpp">
       <Filter>System\Ps2\USB\usb-pad</Filter>
     </ClCompile>
     <ClCompile Include="USB\usb-pad\usb-turntable.cpp">
@@ -1397,6 +1394,9 @@
     <ClCompile Include="SPU2\ReverbResample.cpp" />
     <ClCompile Include="SIO\Pad\PadPopn.cpp">
       <Filter>System\Ps2\Iop\SIO\PAD</Filter>
+    </ClCompile>
+    <ClCompile Include="DebugTools\SymbolGuardian.cpp">
+      <Filter>System\Ps2\Debug</Filter>
     </ClCompile>
     <ClCompile Include="USB\usb-eyetoy\cam-jpeg.cpp">
       <Filter>System\Ps2\USB\usb-eyetoy</Filter>
@@ -1663,9 +1663,6 @@
     </ClInclude>
     <ClInclude Include="x86\microVU_Profiler.h">
       <Filter>System\Ps2\EmotionEngine\VU\Dynarec\microVU</Filter>
-    </ClInclude>
-    <ClInclude Include="DebugTools\SymbolMap.h">
-      <Filter>System\Ps2\Debug</Filter>
     </ClInclude>
     <ClInclude Include="DebugTools\DebugInterface.h">
       <Filter>System\Ps2\Debug</Filter>
@@ -2127,7 +2124,7 @@
     <ClInclude Include="USB\usb-mic\usb-headset.h">
       <Filter>System\Ps2\USB\usb-mic</Filter>
     </ClInclude>
-    <ClInclude Include="USB\usb-mic\usb-mic-singstar.h">
+    <ClInclude Include="USB\usb-mic\usb-mic.h">
       <Filter>System\Ps2\USB\usb-mic</Filter>
     </ClInclude>
     <ClInclude Include="USB\usb-mic\audio.h">
@@ -2149,6 +2146,9 @@
       <Filter>System\Ps2\USB\usb-pad</Filter>
     </ClInclude>
     <ClInclude Include="USB\usb-pad\usb-pad.h">
+      <Filter>System\Ps2\USB\usb-pad</Filter>
+    </ClInclude>
+    <ClInclude Include="USB\usb-pad\usb-train.h">
       <Filter>System\Ps2\USB\usb-pad</Filter>
     </ClInclude>
     <ClInclude Include="USB\usb-pad\usb-trance-vibrator.h">
@@ -2339,6 +2339,9 @@
       <Filter>System\Ps2\Iop\SIO\PAD</Filter>
     </ClInclude>
     <ClInclude Include="SupportURLs.h" />
+    <ClInclude Include="DebugTools\SymbolGuardian.h">
+      <Filter>System\Ps2\Debug</Filter>
+    </ClInclude>
     <ClInclude Include="USB\usb-eyetoy\cam-jpeg.h">
       <Filter>System\Ps2\USB\usb-eyetoy</Filter>
     </ClInclude>

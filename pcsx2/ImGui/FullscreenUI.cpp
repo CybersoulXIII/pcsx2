@@ -2808,12 +2808,12 @@ void FullscreenUI::DrawSettingsWindow()
 		static constexpr const char* global_icons[] = {ICON_FA_TV, ICON_PF_MICROCHIP, ICON_PF_GEARS_OPTIONS_SETTINGS, ICON_PF_PICTURE,
 			ICON_PF_SOUND, ICON_PF_MEMORY_CARD, ICON_PF_GAMEPAD_ALT, ICON_PF_KEYBOARD_ALT, ICON_FA_TROPHY, ICON_FA_FOLDER_OPEN, ICON_FA_EXCLAMATION_TRIANGLE};
 		static constexpr const char* per_game_icons[] = {ICON_FA_INFO, ICON_PF_GEARS_OPTIONS_SETTINGS, ICON_FA_BAND_AID, ICON_PF_INFINITY,
-			ICON_PF_PICTURE, ICON_PF_SOUND, ICON_PF_MEMORY_CARD, ICON_PF_GAMEPAD_ALT, ICON_FA_EXCLAMATION_TRIANGLE};
+			ICON_PF_PICTURE, ICON_PF_SOUND, ICON_PF_MEMORY_CARD, ICON_FA_EXCLAMATION_TRIANGLE};
 		static constexpr SettingsPage global_pages[] = {SettingsPage::Interface, SettingsPage::BIOS, SettingsPage::Emulation,
 			SettingsPage::Graphics, SettingsPage::Audio, SettingsPage::MemoryCard, SettingsPage::Controller, SettingsPage::Hotkey,
 			SettingsPage::Achievements, SettingsPage::Folders, SettingsPage::Advanced};
 		static constexpr SettingsPage per_game_pages[] = {SettingsPage::Summary, SettingsPage::Emulation, SettingsPage::Patches,
-			SettingsPage::Cheats, SettingsPage::Graphics, SettingsPage::Audio, SettingsPage::MemoryCard, SettingsPage::Controller,
+			SettingsPage::Cheats, SettingsPage::Graphics, SettingsPage::Audio, SettingsPage::MemoryCard,
 			SettingsPage::GameFixes};
 		static constexpr const char* titles[] = {FSUI_NSTR("Summary"), FSUI_NSTR("Interface Settings"), FSUI_NSTR("BIOS Settings"),
 			FSUI_NSTR("Emulation Settings"), FSUI_NSTR("Graphics Settings"), FSUI_NSTR("Audio Settings"), FSUI_NSTR("Memory Card Settings"),
@@ -3057,6 +3057,37 @@ void FullscreenUI::DrawSummarySettingsPage()
 
 				OpenFileSelector(FSUI_ICONSTR(ICON_FA_COMPACT_DISC, "Select Disc Path"), false, std::move(callback), GetDiscImageFilters());
 			}
+		}
+
+		const std::optional<SmallString> value = bsi->GetOptionalSmallStringValue("EmuCore", "InputProfileName", "Shared");
+
+		if (MenuButtonWithValue(FSUI_ICONSTR_S(ICON_PF_GAMEPAD_ALT, "Input Profile", "input_profile"),
+				FSUI_CSTR("The selected input profile will be used for this game."),
+				value.has_value() ? value->c_str() : FSUI_CSTR("Shared"), true))
+		{
+			ImGuiFullscreen::ChoiceDialogOptions options;
+			std::vector<std::string> names;
+
+			options.emplace_back(fmt::format(FSUI_FSTR("Shared")), (value.has_value() && !value->empty() && value == "Shared") ? true : false);
+			names.emplace_back("Shared");
+
+			for (const std::string& name : Pad::GetInputProfileNames())
+			{
+				options.emplace_back(fmt::format(FSUI_FSTR(name)), (value.has_value() && !value->empty() && value == name) ? true : false);
+				names.push_back(std::move(name));
+			}
+
+			OpenChoiceDialog(FSUI_CSTR("Input Profile"), false, options,
+				[game_settings = IsEditingGameSettings(bsi), names = std::move(names)](s32 index, const std::string& title, bool checked) {
+					if (index < 0)
+						return;
+
+					auto lock = Host::GetSettingsLock();
+					SettingsInterface* bsi = GetEditingSettingsInterface(game_settings);
+					bsi->SetStringValue("EmuCore", "InputProfileName", names[index].c_str());
+					SetSettingsChanged(bsi);
+					CloseChoiceDialog();
+				});
 		}
 	}
 	else
@@ -3685,11 +3716,6 @@ void FullscreenUI::DrawGraphicsSettingsPage(SettingsInterface* bsi, bool show_ad
 		DrawIntListSetting(bsi, FSUI_CSTR("Blending Accuracy"),
 			FSUI_CSTR("Determines the level of accuracy when emulating blend modes not supported by the host graphics API."), "EmuCore/GS",
 			"accurate_blending_unit", static_cast<int>(AccBlendLevel::Basic), s_blending_options, std::size(s_blending_options), true);
-		DrawIntListSetting(bsi, FSUI_CSTR("Texture Preloading"),
-			FSUI_CSTR(
-				"Uploads full textures to the GPU on use, rather than only the utilized regions. Can improve performance in some games."),
-			"EmuCore/GS", "texture_preloading", static_cast<int>(TexturePreloadingLevel::Off), s_preloading_options,
-			std::size(s_preloading_options), true);
 		DrawToggleSetting(
 			bsi, FSUI_CSTR("Mipmapping"), FSUI_CSTR("Enables emulation of the GS's texture mipmapping."), "EmuCore/GS", "hw_mipmap", true);
 	}
@@ -3951,6 +3977,11 @@ void FullscreenUI::DrawGraphicsSettingsPage(SettingsInterface* bsi, bool show_ad
 			"EmuCore/GS", "DisableShaderCache", false);
 		DrawToggleSetting(bsi, FSUI_CSTR("Disable Vertex Shader Expand"), FSUI_CSTR("Falls back to the CPU for expanding sprites/lines."),
 			"EmuCore/GS", "DisableVertexShaderExpand", false);
+		DrawIntListSetting(bsi, FSUI_CSTR("Texture Preloading"),
+			FSUI_CSTR(
+				"Uploads full textures to the GPU on use, rather than only the utilized regions. Can improve performance in some games."),
+			"EmuCore/GS", "texture_preloading", static_cast<int>(TexturePreloadingLevel::Off), s_preloading_options,
+			std::size(s_preloading_options), true);
 	}
 
 	EndMenuButtons();
@@ -4235,44 +4266,10 @@ void FullscreenUI::DrawControllerSettingsPage()
 
 	MenuHeading(FSUI_CSTR("Configuration"));
 
-	if (IsEditingGameSettings(bsi))
+	if (MenuButton(FSUI_ICONSTR(ICON_FA_DUMPSTER_FIRE, "Reset Settings"),
+			FSUI_CSTR("Resets all configuration to defaults (including bindings).")))
 	{
-		if (DrawToggleSetting(bsi, FSUI_ICONSTR(ICON_FA_COG, "Per-Game Configuration"),
-				FSUI_CSTR("Uses game-specific settings for controllers for this game."), "Pad", "UseGameSettingsForController", false,
-				IsEditingGameSettings(bsi), false))
-		{
-			// did we just enable per-game for the first time?
-			if (bsi->GetBoolValue("Pad", "UseGameSettingsForController", false) &&
-				!bsi->GetBoolValue("Pad", "GameSettingsInitialized", false))
-			{
-				bsi->SetBoolValue("Pad", "GameSettingsInitialized", true);
-				CopyGlobalControllerSettingsToGame();
-			}
-		}
-	}
-
-	if (IsEditingGameSettings(bsi) && !bsi->GetBoolValue("Pad", "UseGameSettingsForController", false))
-	{
-		// nothing to edit..
-		EndMenuButtons();
-		return;
-	}
-
-	if (IsEditingGameSettings(bsi))
-	{
-		if (MenuButton(
-				FSUI_ICONSTR(ICON_FA_COPY, "Copy Global Settings"), FSUI_CSTR("Copies the global controller configuration to this game.")))
-		{
-			CopyGlobalControllerSettingsToGame();
-		}
-	}
-	else
-	{
-		if (MenuButton(FSUI_ICONSTR(ICON_FA_DUMPSTER_FIRE, "Reset Settings"),
-				FSUI_CSTR("Resets all configuration to defaults (including bindings).")))
-		{
-			ResetControllerSettings();
-		}
+		ResetControllerSettings();
 	}
 
 	if (MenuButton(
@@ -6914,6 +6911,9 @@ TRANSLATE_NOOP("FullscreenUI", "Unknown");
 TRANSLATE_NOOP("FullscreenUI", "OK");
 TRANSLATE_NOOP("FullscreenUI", "Select Device");
 TRANSLATE_NOOP("FullscreenUI", "Details");
+TRANSLATE_NOOP("FullscreenUI", "The selected input profile will be used for this game.");
+TRANSLATE_NOOP("FullscreenUI", "Shared");
+TRANSLATE_NOOP("FullscreenUI", "Input Profile");
 TRANSLATE_NOOP("FullscreenUI", "Options");
 TRANSLATE_NOOP("FullscreenUI", "Copies the current global settings to this game.");
 TRANSLATE_NOOP("FullscreenUI", "Clears all settings set for this game.");
@@ -7174,8 +7174,6 @@ TRANSLATE_NOOP("FullscreenUI", "If not set, this card will be considered unplugg
 TRANSLATE_NOOP("FullscreenUI", "The selected memory card image will be used for this slot.");
 TRANSLATE_NOOP("FullscreenUI", "Removes the current card from the slot.");
 TRANSLATE_NOOP("FullscreenUI", "Configuration");
-TRANSLATE_NOOP("FullscreenUI", "Uses game-specific settings for controllers for this game.");
-TRANSLATE_NOOP("FullscreenUI", "Copies the global controller configuration to this game.");
 TRANSLATE_NOOP("FullscreenUI", "Resets all configuration to defaults (including bindings).");
 TRANSLATE_NOOP("FullscreenUI", "Replaces these settings with a previously saved input profile.");
 TRANSLATE_NOOP("FullscreenUI", "Stores the current settings to an input profile.");
@@ -7622,8 +7620,6 @@ TRANSLATE_NOOP("FullscreenUI", "Folder Memory Card Filter");
 TRANSLATE_NOOP("FullscreenUI", "Load Profile");
 TRANSLATE_NOOP("FullscreenUI", "Save Profile");
 TRANSLATE_NOOP("FullscreenUI", "Create");
-TRANSLATE_NOOP("FullscreenUI", "Per-Game Configuration");
-TRANSLATE_NOOP("FullscreenUI", "Copy Global Settings");
 TRANSLATE_NOOP("FullscreenUI", "Enable SDL Input Source");
 TRANSLATE_NOOP("FullscreenUI", "SDL DualShock 4 / DualSense Enhanced Mode");
 TRANSLATE_NOOP("FullscreenUI", "SDL DualSense Player LED");
