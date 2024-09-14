@@ -162,7 +162,7 @@ bool GS3DScreenshot::DumpOBJ(const std::string& filename) const
 			fmt::print(fp,
 				"v {} {} {} {:.3f} {:.3f} {:.3f}\n",
 				tri.verts[i].x,
-				-tri.verts[i].y,  // axis conversion
+				tri.verts[i].y,
 				tri.verts[i].z,
 				tri.verts[i].r / 255.0f,
 				tri.verts[i].g / 255.0f,

@@ -531,19 +531,22 @@ void GSState::DumpVertices(const std::string& filename)
 // (broken vertex colors, missing polys)
 void GSState::DumpGeometryFor3DScreenshot()
 {
-    if (!m_3d_screenshot)
-        return;
+	if (!m_3d_screenshot)
+		return;
 
-    // Only tris
-    if (GSUtil::GetVertexCount(PRIM->PRIM) != 3)
-        return;
+	// Only tris
+	if (GSUtil::GetVertexCount(PRIM->PRIM) != 3)
+		return;
 
-    const u32 count = m_index.tail;
+	const u32 count = m_index.tail;
 	const bool use_uv = PRIM->FST;
+
+	// Get screen size
+	// TODO(3d-screenshot): is this the correct? overscan?
 	const GSVector2i fb_size(PCRTCDisplays.GetFramebufferSize(-1));
 
-    for (u32 i = 0; i < count; i += 3)
-    {
+	for (u32 i = 0; i < count; i += 3)
+	{
 		GS3DScreenshot::Tri tri;
 
 		for (u32 j = 0; j < 3; j++)
@@ -557,10 +560,14 @@ void GSState::DumpGeometryFor3DScreenshot()
 			// Translate the origin from the top-left of the
 			// windows to the center, as in typical camera space
 			// (removes diagonal shear).
-			x -= fb_size.x / 2;  // width / 2
-			y -= fb_size.y / 2;  // height / 2
+			x -= fb_size.x / 2.0f;  // width / 2
+			y -= fb_size.y / 2.0f;  // height / 2
 
-			// Attempt to make models less ungodly big.
+			// Change from y-down (screen) to y-up (camera).
+			y = -y;
+
+			// x and y are in pixels. Scale down so the model is
+			// less ungodly big.
 			x /= 1024.0f;
 			y /= 1024.0f;
 
@@ -593,7 +600,7 @@ void GSState::DumpGeometryFor3DScreenshot()
 			const double w = 1.0f / vs.RGBAQ.Q;
 			x *= w;
 			y *= w;
-			float z = -w;
+			const float z = -w;
 
 			vd.x = x;
 			vd.y = y;
