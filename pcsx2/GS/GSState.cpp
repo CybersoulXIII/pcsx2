@@ -172,6 +172,8 @@ void GSState::Reset(bool hardware_reset)
 		m_env.CTXT[i].offset.fb = m_mem.GetOffset(m_env.CTXT[i].FRAME.Block(), m_env.CTXT[i].FRAME.FBW, m_env.CTXT[i].FRAME.PSM);
 		m_env.CTXT[i].offset.zb = m_mem.GetOffset(m_env.CTXT[i].ZBUF.Block(), m_env.CTXT[i].FRAME.FBW, m_env.CTXT[i].ZBUF.PSM);
 		m_env.CTXT[i].offset.fzb4 = m_mem.GetPixelOffset4(m_env.CTXT[i].FRAME, m_env.CTXT[i].ZBUF);
+
+		m_3d_screenshot.reset();
 	}
 
 	UpdateScissor();
@@ -523,6 +525,126 @@ void GSState::DumpVertices(const std::string& filename)
 	file << "\tmax t (x,y,z,w): " << v2.x << DEL << v2.y << DEL << v2.z << DEL << v2.w << std::endl;
 
 	file.close();
+}
+
+// NOTE: this does NOT work in the HW renderer for some reason
+// (broken vertex colors, missing polys)
+void GSState::DumpGeometryFor3DScreenshot()
+{
+	if (!m_3d_screenshot)
+		return;
+
+	// Only tris
+	if (GSUtil::GetVertexCount(PRIM->PRIM) != 3)
+		return;
+
+	const u32 count = m_index.tail;
+	const bool use_uv = PRIM->FST;
+
+	// Get screen size
+	// TODO(3d-screenshot): is this the correct? overscan?
+	const GSVector2i fb_size(PCRTCDisplays.GetFramebufferSize(-1));
+
+	for (u32 i = 0; i < count; i += 3)
+	{
+		GS3DScreenshot::Tri tri;
+
+		for (u32 j = 0; j < 3; j++)
+		{
+			const auto& vs = m_vertex.buff[m_index.buff[i + j]];
+			auto& vd = tri.verts[j];
+
+			float x = (vs.XYZ.X - (int)m_context->XYOFFSET.OFX) / 16.0f;
+			float y = (vs.XYZ.Y - (int)m_context->XYOFFSET.OFY) / 16.0f;
+
+			// Translate the origin from the top-left of the
+			// windows to the center, as in typical camera space
+			// (removes diagonal shear).
+			x -= fb_size.x / 2.0f;  // width / 2
+			y -= fb_size.y / 2.0f;  // height / 2
+
+			// Change from y-down (screen) to y-up (camera).
+			y = -y;
+
+			// x and y are in pixels. Scale down so the model is
+			// less ungodly big.
+			x /= 1024.0f;
+			y /= 1024.0f;
+
+			/*
+			// Convert quantized integer Z/depth value to the
+			// range [0.0, 1.0]. Depends on Z buffer format.
+			double depth;
+			switch (GSLocalMemory::m_psm[m_context->ZBUF.PSM].fmt)
+			{
+				case 0:  // 32 bits
+					depth = double(vs.XYZ.Z) / 0xFFFFFFFF;
+					break;
+				case 1:  // 24 bit
+					depth = double(vs.XYZ.Z) / 0xFFFFFF;
+					break;
+				default: // 16 bit
+					depth = double(vs.XYZ.Z) / 0xFFFF;
+					break;
+			}
+
+			// PS2 always uses >, not <, for the depth test, so
+			// 0=far,1=near. Convert to 0=near,1=far.
+			depth = 1.0 - depth;
+			*/
+
+			// Attempt to remove perspective distortion. Assumes
+			// Q = 1/W, where W = -Z was the homogeneous
+			// coordinate resulting from perspective projection,
+			// and undoes the division by W.
+			const double w = 1.0f / vs.RGBAQ.Q;
+			x *= w;
+			y *= w;
+			const float z = -w;
+
+			vd.x = x;
+			vd.y = y;
+			vd.z = z;
+			vd.q = vs.RGBAQ.Q;
+
+			vd.r = vs.RGBAQ.R;
+			vd.g = vs.RGBAQ.G;
+			vd.b = vs.RGBAQ.B;
+			vd.a = vs.RGBAQ.A;
+
+			if (PRIM->TME && m_context->TEX0.TFX == TFX_DECAL)
+			{
+				// In DECAL mode, the vertex color is ignored and
+				// only the texture color is used. Anticipating
+				// that downstream users will treat everything as
+				// MODULATE, convert DECAL to MODULATE by
+				// replacing the vertex colors with 128
+				// (modulating by which has no effect).
+				vd.r = vd.g = vd.b = 128;
+				// Don't do alpha
+			}
+
+			if (use_uv)
+			{
+				// TODO(3d_screenshot): untested
+				vd.u = vs.U / 16.0f / (1 << m_context->TEX0.TW);
+				vd.v = vs.V / 16.0f / (1 << m_context->TEX0.TH);
+			}
+			else
+			{
+				vd.u = vs.ST.S / vs.RGBAQ.Q;
+				vd.v = vs.ST.T / vs.RGBAQ.Q;
+			}
+		}
+
+		tri.texture_enabled = PRIM->TME;
+
+		tri.culled = m_3d_screenshot->m_tri_was_culled[i / 3];
+
+		m_3d_screenshot->AddTri(tri);
+	}
+
+	m_3d_screenshot->m_tri_was_culled.clear();
 }
 
 __inline void GSState::CheckFlushes()
@@ -1826,7 +1948,7 @@ void GSState::CheckWriteOverlap(bool req_write, bool req_read)
 		{
 			if (GSLocalMemory::HasOverlap(blit.DBP, blit.DBW, blit.DPSM, write_rect, prev_ctx.TEX0.TBP0, prev_ctx.TEX0.TBW, prev_ctx.TEX0.PSM, tex_rect))
 			{
-				
+
 				Flush(GSFlushReason::UPLOADDIRTYTEX);
 			}
 			if (prev_ctx.TEX1.MXL > 0 && prev_ctx.TEX1.MMIN >= 2 && prev_ctx.TEX1.MMIN <= 5)
@@ -3437,7 +3559,7 @@ __forceinline void GSState::HandleAutoFlush()
 					//We know we've changed page, so let's set the dimension to cover the page they're in (for different pixel orders)
 					tex_rect &= tex_page_mask;
 					tex_rect = GSVector4i(tex_rect.x / tex_psm.pgs.x, tex_rect.y / tex_psm.pgs.y, tex_rect.z / tex_psm.pgs.x, tex_rect.w / tex_psm.pgs.y);
-					
+
 					const int frame_page_mask_x = ~(frame_psm.pgs.x - 1);
 					const int frame_page_mask_y = ~(frame_psm.pgs.y - 1);
 					const GSVector4i frame_page_mask = { frame_page_mask_x, frame_page_mask_y, frame_page_mask_x, frame_page_mask_y };
@@ -3511,7 +3633,6 @@ __forceinline void GSState::VertexKick(u32 skip)
 	if (m < n)
 		return;
 
-
 	// Skip draws when scissor is out of range (i.e. bottom-right is less than top-left), since everything will get clipped.
 	skip |= static_cast<u32>(m_scissor_invalid);
 
@@ -3553,6 +3674,8 @@ __forceinline void GSState::VertexKick(u32 skip)
 			case GS_TRIANGLEFAN:
 			case GS_SPRITE:
 			{
+				if (m_3d_screenshot)
+					break;
 				// Discard degenerate triangles which don't cover at least one pixel. Since the vertices are in native
 				// resolution space, we can use the integer locations. When upscaling, we can't, because a primitive which
 				// does not span a single pixel at 1x may span multiple pixels at higher resolutions.
@@ -3584,7 +3707,7 @@ __forceinline void GSState::VertexKick(u32 skip)
 #endif
 	}
 
-	if (skip != 0)
+	if (skip != 0 && !m_3d_screenshot)
 	{
 		switch (prim)
 		{
@@ -3700,6 +3823,12 @@ __forceinline void GSState::VertexKick(u32 skip)
 			break;
 		default:
 			ASSUME(0);
+	}
+
+	if (m_3d_screenshot && n == 3)
+	{
+		// Record whether tri would have been skipped
+		m_3d_screenshot->m_tri_was_culled.push_back(skip != 0);
 	}
 
 	// Update rectangle for the current draw. We can use the re-integer coordinates from min/max here.
@@ -3845,7 +3974,7 @@ GSState::TextureMinMaxResult GSState::GetTextureMinMax(GIFRegTEX0 TEX0, GIFRegCL
 		if (linear)
 		{
 			st += GSVector4(-0.5f, 0.5f).xxyy();
-			
+
 			// If it's the start of the texture and our little adjustment is all that pushed it over, clamp it to 0.
 			// This stops the border check failing when using repeat but needed less than the full texture
 			// since this was making it take the full texture even though it wasn't needed.
@@ -3931,7 +4060,7 @@ GSState::TextureMinMaxResult GSState::GetTextureMinMax(GIFRegTEX0 TEX0, GIFRegCL
 		// This may be inaccurate depending on the draw, but adding 1 all the time is wrong too.
 		const int inclusive_x_req = ((m_vt.m_primclass < GS_TRIANGLE_CLASS) || (grad.x < 1.0f || (grad.x == 1.0f && m_vt.m_max.p.x != floor(m_vt.m_max.p.x)))) ? 1 : 0;
 		const int inclusive_y_req = ((m_vt.m_primclass < GS_TRIANGLE_CLASS) || (grad.y < 1.0f || (grad.y == 1.0f && m_vt.m_max.p.y != floor(m_vt.m_max.p.y)))) ? 1 : 0;
-	
+
 		// Roughly cut out the min/max of the read (Clamp)
 		switch (wms)
 		{
@@ -4517,7 +4646,7 @@ void GSState::GSPCRTCRegs::CheckSameSource()
 	PCRTCDisplays[0].FBW == PCRTCDisplays[1].FBW &&
 	GSUtil::HasCompatibleBits(PCRTCDisplays[0].PSM, PCRTCDisplays[1].PSM);
 }
-		
+
 bool GSState::GSPCRTCRegs::FrameWrap()
 {
 	const GSVector4i combined_rect = GSVector4i(PCRTCDisplays[0].framebufferRect.runion(PCRTCDisplays[1].framebufferRect));

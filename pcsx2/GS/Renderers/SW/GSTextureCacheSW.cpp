@@ -6,6 +6,10 @@
 #include "GS/GSPerfMon.h"
 #include "GS/GSPng.h"
 #include "GS/GSUtil.h"
+#include "GS/GSXXH.h"
+
+#include "common/FileSystem.h"
+#include "common/Path.h"
 
 GSTextureCacheSW::GSTextureCacheSW() = default;
 
@@ -236,6 +240,9 @@ bool GSTextureCacheSW::Texture::Update(const GSVector4i& rect)
 		std::memset(m_buff, 0, size);
 	}
 
+	// Invalidate the dump filename/hash since the contents are changing
+	m_dump_filename.clear();
+
 	GSLocalMemory& mem = g_gs_renderer->m_mem;
 
 	GSOffset off = m_offset;
@@ -342,4 +349,128 @@ bool GSTextureCacheSW::Texture::Save(const std::string& fn) const
 		return GSPng::Save(format, fn, reinterpret_cast<const u8*>(dumptex.get()),
 			w, h, w * sizeof(u32), GSConfig.PNGCompressionLevel);
 	}
+}
+
+// PS2 uses the modulate formula 2*vertexAlpha*textureAlpha for
+// the alpha channel. Lots of games bake a factor of 0.5 into the
+// textures, turning this into vertexAlpha*textureAlpha.
+//
+// To avoid tons of half-transparent textures, we expand the
+// original range of the alpha channel to a full 0-255 range.
+// Textures we do this to will be marked like "-XA128" in the
+// filename, telling you the alpha was expanded from the original
+// range 0-128. Downstream users can use the filename to know
+// what modulate formula to use.
+static int ExpandAlphaChannel(u8* pixels, u32 num_pixels)
+{
+	u8 max_alpha = 0;
+	for (u32 i = 0; i != num_pixels; i++)
+		max_alpha = std::max(max_alpha, pixels[4 * i + 3]);
+
+	// No expansion needed
+	if (max_alpha == 255)
+		return 255;
+
+	// If the alpha channel is completely zero, it is probably
+	// unused (ie. texture alpha is disabled in the PRIM
+	// register), so we discard the alpha.
+	if (max_alpha == 0)
+	{
+		for (u32 i = 0; i != num_pixels; i++)
+			pixels[4 * i + 3] = 255;
+
+		return 0;
+	}
+
+	const unsigned f = (256 * 255) / max_alpha;
+	for (u32 i = 0; i != num_pixels; i++)
+	{
+		// Fixed point for a = round(a * 255/max_alpha)
+		pixels[4 * i + 3] = (f * pixels[4 * i + 3] + 128) >> 8;
+	}
+
+	return max_alpha;
+}
+
+void GSTextureCacheSW::Texture::DumpFor3DScreenshot(
+	const std::string& dirname,
+	const GS3DScreenshot::TextureRegion& region
+)
+{
+	// Already dumped?
+	if (!m_dump_filename.empty() && region == m_last_region_dumped)
+		return;
+
+	m_last_region_dumped = region;
+
+	const u32* RESTRICT clut = g_gs_renderer->m_mem.m_clut;
+
+	const GSLocalMemory::psm_t& psm = GSLocalMemory::m_psm[m_TEX0.PSM];
+	const u8* RESTRICT src = (u8*)m_buff;
+	const u32 src_pitch = 1u << (m_tw + (psm.pal == 0 ? 2 : 0));
+
+	if (!src)
+	{
+		// Shouldn't happen
+		m_dump_filename = "TextureNotInCache";
+		return;
+	}
+
+	// Copy the subregion into a new buffer
+	const u32 dst_w = region.Width();
+	const u32 dst_h = region.Height();
+	const std::unique_ptr<u32[]> dumptex = std::make_unique<u32[]>(dst_w * dst_h);
+
+	u32* dst = dumptex.get();
+	src += region.v_min * src_pitch;
+
+	if (psm.pal == 0)
+	{
+		// no clut => dump directly
+		for (u32 j = region.v_min; j <= region.v_max; j++)
+		{
+			for (u32 i = region.u_min; i <= region.u_max; i++)
+				*(dst++) = src[i];
+
+			src += src_pitch;
+		}
+	}
+	else
+	{
+		for (u32 j = region.v_min; j <= region.v_max; j++)
+		{
+			for (u32 i = region.u_min; i <= region.u_max; i++)
+				*(dst++) = clut[src[i]];
+
+			src += src_pitch;
+		}
+	}
+
+	const u64 hash = GSXXH3_64bits(dumptex.get(), dst_w * dst_h * 4);
+
+	const int expanded_alpha = ExpandAlphaChannel(
+		reinterpret_cast<u8*>(dumptex.get()),
+		dst_w * dst_h
+	);
+
+	if (expanded_alpha == 255)  // no expansion
+		m_dump_filename = fmt::format("{:x}.png", hash);
+	else
+		m_dump_filename = fmt::format("{:x}-XA{}.png", hash, expanded_alpha);
+
+	const std::string path = Path::Combine(dirname, m_dump_filename);
+
+	if (FileSystem::FileExists(path.c_str()))
+		return;
+
+	GSPng::Save(
+		GSPng::RGBA_PNG,
+		path,
+		reinterpret_cast<const u8*>(dumptex.get()),
+		dst_w, dst_h,
+		dst_w * 4,  // pitch
+		GSConfig.PNGCompressionLevel,
+		false,
+		true    // don't change the file ending to _full.png
+	);
 }

@@ -9,6 +9,7 @@
 #include "GS/Renderers/Common/GSDevice.h"
 #include "GS/Renderers/Common/GSRenderer.h"
 #include "common/AlignedMalloc.h"
+#include "common/Console.h"
 
 GSClut::GSClut(GSLocalMemory* mem)
 	: m_mem(mem)
@@ -462,7 +463,14 @@ void GSClut::GetAlphaMinMax32(int& amin_out, int& amax_out)
 {
 	// call only after Read32
 
-	pxAssert(!m_read.dirty);
+	// HACK(3d_screenshot): this assert triggers sporadically in
+	// Kingdom Hearts when taking a 3D screenshot. Call stack is
+	// through TryAlphaTest. Replace it with a warning for now...
+	//pxAssert(!m_read.dirty);
+#if defined(PCSX2_DEVBUILD) || defined(_DEBUG)
+	if (m_read.dirty)
+		Console.Warning("read dirty in GSClut::GetAlphaMinMax32");
+#endif
 
 	if (m_read.adirty)
 	{

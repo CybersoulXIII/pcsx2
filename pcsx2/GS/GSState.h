@@ -11,6 +11,7 @@
 #include "GS/Renderers/Common/GSVertexTrace.h"
 #include "GS/Renderers/Common/GSDevice.h"
 #include "GS/GSVector.h"
+#include "GS/GS3DScreenshot.h"
 #include "GSAlignedClass.h"
 
 class GSDumpBase;
@@ -218,6 +219,7 @@ public:
 	GSDrawingContext* m_context = nullptr;
 	GSVector4i temp_draw_rect = {};
 	std::unique_ptr<GSDumpBase> m_dump;
+	std::unique_ptr<GS3DScreenshot> m_3d_screenshot;
 	bool m_scissor_invalid = false;
 	bool m_nativeres = false;
 	bool m_mipmap = false;
@@ -332,7 +334,7 @@ public:
 		void EnableDisplays(GSRegPMODE pmode, GSRegSMODE2 smode2, bool smodetoggle);
 
 		void CheckSameSource();
-		
+
 		bool FrameWrap();
 
 		// If the start point of both frames match, we can do a single read
@@ -415,6 +417,7 @@ public:
 	void SetRegsMem(u8* basemem) { m_regs = reinterpret_cast<GSPrivRegSet*>(basemem); }
 
 	void DumpVertices(const std::string& filename);
+	void DumpGeometryFor3DScreenshot();
 
 	bool TrianglesAreQuads(bool shuffle_check = false) const;
 	PRIM_OVERLAP PrimitiveOverlap();

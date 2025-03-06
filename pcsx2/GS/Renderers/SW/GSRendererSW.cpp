@@ -496,7 +496,36 @@ void GSRendererSW::Draw()
 	}
 	else
 	{
+		// TODO(3d_screenshot): do we need this?
+		if (m_3d_screenshot)
+			Sync(2);
+
 		Queue(data);
+	}
+
+	if (m_3d_screenshot)
+	{
+		GSTextureCacheSW::Texture* t = sd->m_tex[0].t;
+
+		if (PRIM->TME && t)
+		{
+			// Get subregion to dump
+			GS3DScreenshot::TextureRegion region;
+			const u32 tw = 1 << t->m_TEX0.TW;
+			const u32 th = 1 << t->m_TEX0.TH;
+			region = GS3DScreenshot::GetTextureRegionForCLAMP(m_context->CLAMP, tw, th);
+
+			// Dumping needs to be done AFTER the call to
+			// Queue(), since that's what actually updates the
+			// GSTextureCacheSW object.
+			t->DumpFor3DScreenshot(m_3d_screenshot->m_dump_dir, region);
+
+			m_3d_screenshot->SetTextureName(t->m_dump_filename);
+			m_3d_screenshot->SetTextureRegion(region, tw, th);
+
+		}
+
+		DumpGeometryFor3DScreenshot();
 	}
 
 	/*

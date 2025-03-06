@@ -1,8 +1,8 @@
 name: 🌎 Update Base Translation
 
 on:
-  schedule:
-    - cron: "0 0 * * *" # Every day at 12am UTC.
+  # schedule:
+  #   - cron: "0 0 * * *" # Every day at 12am UTC.
   workflow_dispatch: # As well as manually.
 
 jobs:
@@ -15,7 +15,7 @@ jobs:
 
       - name: Update Base Translation
         run: ./.github/workflows/scripts/common/update_base_translation.sh
-      
+
       - name: Create Pull Request
         uses: peter-evans/create-pull-request@v7
         with:
