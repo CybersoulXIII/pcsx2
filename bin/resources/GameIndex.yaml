@@ -6512,7 +6512,12 @@ SCES-54941:
   region: "PAL-E"
 SCES-55019:
   name: "Ratchet & Clank - Size Matters"
-  region: "PAL-M5"
+  region: "PAL-M13"
+  gsHWFixes:
+    recommendedBlendingLevel: 4 # Fixes vendor and other bloom.
+    autoFlush: 2 # Fixes missing bloom and shadow definition.
+    halfPixelOffset: 5 # Fixes misaligned bloom.
+    nativeScaling: 2 # Fixes pixelated bloom.
 SCES-55038:
   name: "EyeToy Play - Hero"
   region: "PAL-M15"
@@ -7651,6 +7656,8 @@ SCKA-20120:
   gsHWFixes:
     recommendedBlendingLevel: 4 # Fixes vendor and other bloom.
     autoFlush: 2 # Fixes missing bloom and shadow definition.
+    halfPixelOffset: 5 # Fixes misaligned bloom.
+    nativeScaling: 2 # Fixes pixelated bloom.
 SCKA-20124:
   name: "Piposarugetchu 3" # Ape Escape 3
   region: "NTSC-K"
@@ -12434,6 +12441,8 @@ SCUS-97615:
   gsHWFixes:
     recommendedBlendingLevel: 4 # Fixes vendor and other bloom.
     autoFlush: 2 # Fixes missing bloom and shadow definition.
+    halfPixelOffset: 5 # Fixes misaligned bloom.
+    nativeScaling: 2 # Fixes pixelated bloom.
 SCUS-97616:
   name: "SingStar '80s"
   region: "NTSC-U"
@@ -17528,6 +17537,8 @@ SLES-51619:
   name: "Clock Tower 3"
   region: "PAL-M5"
   compat: 5
+  gameFixes:
+    - SoftwareRendererFMVHack # Fixes brightness and striped lines in FMVs.
 SLES-51620:
   name: "Black and Bruised"
   region: "PAL-M5"
@@ -27628,6 +27639,8 @@ SLES-55019:
   gsHWFixes:
     recommendedBlendingLevel: 4 # Fixes vendor and other bloom.
     autoFlush: 2 # Fixes missing bloom and shadow definition.
+    halfPixelOffset: 5 # Fixes misaligned bloom.
+    nativeScaling: 2 # Fixes pixelated bloom.
 SLES-55020:
   name: "Die Simpsons - Das Spiel"
   region: "PAL-G"
@@ -30025,6 +30038,8 @@ SLKA-25051:
   name: "Clock Tower 3"
   region: "NTSC-K"
   compat: 5
+  gameFixes:
+    - SoftwareRendererFMVHack # Fixes brightness and striped lines in FMVs.
 SLKA-25052:
   name: "Air Ranger 2 - Rescue Helicopter"
   region: "NTSC-K"
@@ -40417,6 +40432,8 @@ SLPM-65221:
   name-en: "Clock Tower 3"
   region: "NTSC-J"
   compat: 5
+  gameFixes:
+    - SoftwareRendererFMVHack # Fixes brightness and striped lines in FMVs.
 SLPM-65222:
   name: "遊戯王真デュエルモンスターズⅡ 継承されし記憶 [コナミ殿堂セレクション]"
   name-sort: "ゆうぎおうしんでゅえるもんすたーず2 けいしょうされしきおく [こなみでんどうせれくしょん]"
@@ -52302,6 +52319,8 @@ SLPM-74416:
   name-sort: "くろっくたわー3 [PlayStation2 the Best]"
   name-en: "Clock Tower 3 [PlayStation2 the Best]"
   region: "NTSC-J"
+  gameFixes:
+    - SoftwareRendererFMVHack # Fixes brightness and striped lines in FMVs.
 SLPM-74420:
   name: "頭文字D Special Stage [PlayStation2 the Best]"
   name-sort: "いにしゃるD すぺしゃる すてーじ [PlayStation2 the Best]"
@@ -64584,6 +64603,8 @@ SLUS-20633:
   name: "Clock Tower 3"
   region: "NTSC-U"
   compat: 5
+  gameFixes:
+    - SoftwareRendererFMVHack # Fixes brightness and striped lines in FMVs.
 SLUS-20634:
   name: "Summer Heat Beach Volleyball"
   region: "NTSC-U"
